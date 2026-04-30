@@ -5,7 +5,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from datetime import datetime
 
-import requests
+from urllib.parse import quote
+from curl_cffi import requests as curl_requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 
@@ -14,27 +15,22 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 # Konfiguracja
 # ---------------------------------------------------------------------------
-PRODUCT_QUERY   = "Nike Revolution 8 HJ9198"
-CENEO_SEARCH_URL = f"https://www.ceneo.pl/szukaj-q-{requests.utils.quote(PRODUCT_QUERY)}"
+PRODUCT_QUERY    = "Nike Revolution 8 HJ9198"
+CENEO_SEARCH_URL = f"https://www.ceneo.pl/szukaj-q-{quote(PRODUCT_QUERY)}"
 RECIPIENT_EMAIL  = os.getenv("RECIPIENT_EMAIL", "panrobertkrol@gmail.com")
 GMAIL_USER       = os.getenv("GMAIL_USER")
 GMAIL_APP_PASS   = os.getenv("GMAIL_APP_PASSWORD")
-
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept-Language": "pl-PL,pl;q=0.9",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-}
 
 # ---------------------------------------------------------------------------
 # Scraper Ceneo.pl
 # ---------------------------------------------------------------------------
 def fetch_prices() -> list[dict]:
-    response = requests.get(CENEO_SEARCH_URL, headers=HEADERS, timeout=15)
+    # curl_cffi podszywa się pod Chrome (TLS fingerprint) — omija blokady botów
+    response = curl_requests.get(
+        CENEO_SEARCH_URL,
+        impersonate="chrome124",
+        timeout=20,
+    )
     response.raise_for_status()
 
     soup = BeautifulSoup(response.text, "html.parser")
