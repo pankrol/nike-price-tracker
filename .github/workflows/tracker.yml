@@ -1,0 +1,30 @@
+name: Nike Price Tracker
+
+on:
+  schedule:
+    - cron: '0 6 * * *'   # 08:00 czasu polskiego (UTC+2 latem)
+    - cron: '0 18 * * *'  # 20:00 czasu polskiego (UTC+2 latem)
+  workflow_dispatch:       # ręczne uruchomienie z GitHub UI (przycisk "Run workflow")
+
+jobs:
+  track:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Pobierz kod
+        uses: actions/checkout@v4
+
+      - name: Ustaw Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Zainstaluj zależności
+        run: pip install -r requirements.txt
+
+      - name: Uruchom tracker
+        env:
+          GMAIL_USER:          ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD:  ${{ secrets.GMAIL_APP_PASSWORD }}
+          RECIPIENT_EMAIL:     ${{ secrets.RECIPIENT_EMAIL }}
+        run: python tracker.py
