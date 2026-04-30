@@ -6,9 +6,10 @@ from email.mime.text import MIMEText
 from datetime import datetime
 
 from urllib.parse import quote
-from curl_cffi import requests as curl_requests
+
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
+from playwright.sync_api import sync_playwright
 
 load_dotenv()
 
@@ -22,18 +23,33 @@ GMAIL_USER       = os.getenv("GMAIL_USER")
 GMAIL_APP_PASS   = os.getenv("GMAIL_APP_PASSWORD")
 
 # ---------------------------------------------------------------------------
-# Scraper Ceneo.pl
+# Scraper Ceneo.pl (Playwright — prawdziwy headless Chromium)
 # ---------------------------------------------------------------------------
 def fetch_prices() -> list[dict]:
-    # curl_cffi podszywa się pod Chrome (TLS fingerprint) — omija blokady botów
-    response = curl_requests.get(
-        CENEO_SEARCH_URL,
-        impersonate="chrome124",
-        timeout=20,
-    )
-    response.raise_for_status()
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+            locale="pl-PL",
+            viewport={"width": 1280, "height": 800},
+        )
+        page = context.new_page()
+        page.add_init_script(
+            "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });"
+        )
+        page.goto(CENEO_SEARCH_URL, wait_until="domcontentloaded", timeout=30000)
+        try:
+            page.wait_for_selector("div.cat-prod-row, li.cat-prod-row", timeout=10000)
+        except Exception:
+            pass
+        html = page.content()
+        browser.close()
 
-    soup = BeautifulSoup(response.text, "html.parser")
+    soup = BeautifulSoup(html, "html.parser")
     offers = []
 
     for el in soup.select("div.cat-prod-row, li.cat-prod-row"):
@@ -60,28 +76,6 @@ def fetch_prices() -> list[dict]:
             continue
 
         offers.append({"name": name, "shop": shop, "price": price, "url": href})
-
-    # Fallback — alternatywne selektory
-    if not offers:
-        for el in soup.select("div[data-productid], div.product-item"):
-            name_el  = el.select_one("[class*='name']")
-            price_el = el.select_one("[class*='price']")
-            link_el  = el.find("a")
-            if not name_el or not price_el:
-                continue
-            name = name_el.get_text(strip=True)
-            href = link_el["href"] if link_el else ""
-            if href and not href.startswith("http"):
-                href = "https://www.ceneo.pl" + href
-            price_str = "".join(
-                c for c in price_el.get_text(strip=True).replace(",", ".")
-                if c.isdigit() or c == "."
-            )
-            try:
-                price = float(price_str)
-            except ValueError:
-                continue
-            offers.append({"name": name, "shop": "—", "price": price, "url": href})
 
     offers.sort(key=lambda o: o["price"])
     return offers[:3]
